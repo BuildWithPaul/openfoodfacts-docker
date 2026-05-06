@@ -1,0 +1,10 @@
+# Data files downloaded during import
+data/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment overrides
+.env.local

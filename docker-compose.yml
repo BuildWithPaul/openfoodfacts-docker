@@ -1,0 +1,70 @@
+# ─── Open Food Facts local API (ARM64-compatible) ───────────────────
+# Serves OFF API endpoints on port 5003 using FastAPI + PostgreSQL
+# Works on ARM64 (Raspberry Pi, Apple Silicon, ARM VPS)
+
+services:
+  # ─── FastAPI Server ────────────────────────────────────────────────
+  off-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: off-api
+    restart: unless-stopped
+    ports:
+      - "${OFF_PORT:-5003}:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-off}:${POSTGRES_PASSWORD:-off}@postgres:5432/${POSTGRES_DB:-off}
+      - OFF_PUBLIC_URL=https://world.openfoodfacts.org
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - off-net
+
+  # ─── Import Worker (runs once to load data, then exits) ──────────
+  off-import:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: off-import
+    restart: "no"
+    entrypoint: ["python", "-m", "import_off"]
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-off}:${POSTGRES_PASSWORD:-off}@postgres:5432/${POSTGRES_DB:-off}
+      - IMPORT_DATASET=${IMPORT_DATASET:-french}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - off_import_cache:/tmp/off_data
+    networks:
+      - off-net
+
+  # ─── PostgreSQL ───────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: off-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-off}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-off}
+      - POSTGRES_DB=${POSTGRES_DB:-off}
+    volumes:
+      - off_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-off}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - off-net
+
+volumes:
+  off_pg_data:
+  off_import_cache:
+
+networks:
+  off-net:
+    name: openfoodfacts-docker_off-net
+    driver: bridge
